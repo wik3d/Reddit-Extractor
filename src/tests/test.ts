@@ -1,4 +1,4 @@
-import { Scraper } from '@src/index.';
+import { Scraper } from '@src/index';
 
 const cookie = 'Cookie';
 
