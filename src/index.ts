@@ -13,7 +13,7 @@ export class Scraper {
 	private requestOptions: { headers: HeadersInit, agent?: HttpsProxyAgent<string> };
 	private downloadPath: string;
 
-	constructor(public cookie: string, downloadPath: string = './', private proxy?: proxyType) {
+	constructor(private cookie: string, downloadPath: string = './', private proxy?: proxyType) {
 		if (!cookie) throw new Error('A Reddit account cookie must be provided');
 
 		this.downloadPath = downloadPath;
@@ -52,7 +52,7 @@ export class Scraper {
 
 			// Fetch the JSON data of the reddit post
 			const response = await fetch(jsonUrl, this.requestOptions);
-			if (!response.ok) throw new Error('403 Unauthorized, likely due to a bad cookie or malformed/incorrect URL');
+			if (!response.ok) throw new Error(`${response.status} - ${response.statusText}`);
 
 			const jsonData = await response.json();
 
