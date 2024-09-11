@@ -163,18 +163,14 @@ export class Scraper {
 					// eslint-disable-next-line no-lonely-if
 					if (post?.secure_media?.reddit_video?.is_gif) {
 						const videoPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.videoUrl}`);
-						const gifPath = Path.resolve(this.downloadPath, `${fileID}_${Path.basename(URLs.videoUrl, Path.extname(URLs.videoUrl))}.gif`);
-					
 						const videoUrl = `${post.url}/${URLs.videoUrl}`;
 					
 						try {
 							await this.downloadFile(videoUrl, videoPath);
 
-							await this.convertVideoToGIF(videoPath, gifPath);
-
 							mediaObjects.push({
-								type: 'gif',
-								buffer: await readFile(gifPath),
+								type: 'video',
+								buffer: await readFile(videoPath),
 							});
 						}
 						catch (err) {
@@ -183,7 +179,6 @@ export class Scraper {
 						finally {
 							// Ensure the video file is deleted even if an error occurs
 							fs.unlinkSync(videoPath);
-							fs.unlinkSync(gifPath);
 							if (post.url) post.url = null;
 						}
 					}
@@ -314,26 +309,6 @@ export class Scraper {
 				.run();
 		});
 	}
-
-	private async convertVideoToGIF(videoPath: string, gifPath: string): Promise<void> {
-		return new Promise((resolve, reject) => {
-			ffmpeg(videoPath)
-				.output(gifPath)
-				.outputOptions([
-					'-vf', 'fps=12,scale=320:-1:flags=lanczos',
-					'-loop', '0',
-				])
-				.on('end', () => {
-					resolve();
-				})
-				.on('error', (err) => {
-					console.error('Error during conversion:', err.message);
-					reject(err);
-				})
-				.run();
-		});
-	}
-
 
 	private hasFileExtension(url: string): boolean {
 		const extensionPattern = /\.[a-zA-Z0-9]+$/;
