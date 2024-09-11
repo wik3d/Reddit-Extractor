@@ -57,11 +57,17 @@ export class Scraper {
 			const jsonData = await response.json();
 
 			const post = jsonData[0]?.data?.children?.[0]?.data;
-			const subreddit = jsonData[0]?.data?.children?.[0]?.data?.subreddit_name_prefixed || null;
+			const authorName = post?.author || null;
+			const subreddit = post?.subreddit_name_prefixed || null;
 			const title = post?.title || null;
 			const description = post?.selftext || null;
 			let externalUrl: string;
 			const mediaBuffers: Buffer[] = [];
+			const upVotes = post?.ups || 0;
+			const downVotes = upVotes ? Math.ceil((1 - post?.upvote_ratio) * upVotes) : 0;
+			const comments = post?.num_comments || 0;
+			const postedAt = post?.created_utc;
+			const isOver18: boolean = post?.over_18;
 
 			// Basically if any URL contains 'amp;' then it wont work. Im so lucky I even found this out cuz otherwise that wouldve been so much hassle
 			const cleanUrl = (url: string) => url.replace(/amp;/g, '');
@@ -142,17 +148,23 @@ export class Scraper {
 
 			// Handle any external URLs
 			if (post?.url) {
-				if (!this.hasFileExtension(post.url) && !post.url.includes('/gallery') && mediaBuffers.every(url => !url.includes(post.url && '.mp4'))) {
+				if (!this.hasFileExtension(post.url) && !post.url.includes('/gallery') && mediaBuffers.every(url => !url.includes(post.url && '.mp4')) && !post.url.includes(post.subreddit)) {
 					externalUrl = post.url;
 				}
 			}
 
 			const postData = {
+				author: authorName || null,
 				subreddit,
 				title: title?.trim(),
 				description: description?.trim() ?? null,
 				media: mediaBuffers.filter(Boolean) || null,
 				externalUrl: externalUrl || null,
+				upVotes,
+				downVotes,
+				comments,
+				isOver18,
+				postedAt,
 			};
 
 			return postData;

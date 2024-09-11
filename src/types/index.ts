@@ -4,3 +4,17 @@ export interface proxyType {
     port: number;
     auth?: { username: string, password: string };
 }
+
+export interface Post {
+    author: string | null;
+    subreddit: string;
+    title?: string;
+    description?: string | null;
+    media: Buffer[] | null;
+    externalUrl?: string | null;
+    upVotes: number;
+    downVotes: number;
+    comments: number;
+    isOver18: boolean;
+    postedAt: Date;
+}
