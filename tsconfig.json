@@ -1,0 +1,28 @@
+{
+    "compilerOptions": {
+        "target": "ESNext",
+        "lib": ["DOM", "es6", "ES2021.String"],
+        "module": "commonjs",
+        "rootDir": "./src/",
+        "outDir": "./production/",
+        "strict": false,
+        "allowJs": true,
+        "moduleResolution": "node",
+        "importHelpers": true,
+        "experimentalDecorators": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "allowSyntheticDefaultImports": true,
+        "resolveJsonModule": true,
+        "forceConsistentCasingInFileNames": true,
+        "removeComments": false,
+        "typeRoots": [
+            "node_modules/@types"
+        ],
+        "sourceMap": false,
+        "baseUrl": "./",
+        "paths": {
+            "@src/*": ["src/*"],
+        }
+    },
+}
