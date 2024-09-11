@@ -1,4 +1,4 @@
-import { Post, proxyType } from './types';
+import { Media, Post, proxyType } from './types';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import * as Path from 'path';
 import axios from 'axios';
@@ -62,7 +62,7 @@ export class Scraper {
 			const title = post?.title || null;
 			const description = post?.selftext || null;
 			let externalUrl: string;
-			const mediaBuffers: Buffer[] = [];
+			const mediaObjects: Media[] = [];
 			const upVotes = post?.ups || 0;
 			const downVotes = upVotes ? Math.ceil((1 - post?.upvote_ratio) * upVotes) : 0;
 			const comments = post?.num_comments || 0;
@@ -76,10 +76,12 @@ export class Scraper {
 			if (post?.preview?.images) {
 				for (const image of post.preview.images) {
 					let url = image.source.url;
+					let type: 'image' | 'gif' = 'image';
 
 					// If it's a GIF with format=png, use the URL from variants
 					if (url.includes('.gif') && url.includes('?format=png') && image.variants?.gif?.source?.url) {
 						url = cleanUrl(image.variants.gif.source.url);
+						type = 'gif';
 					}
 
 					// Get rid of any external preview cuz they're low quality and just not needed
@@ -87,7 +89,10 @@ export class Scraper {
 						const fetchedImage = await fetch(cleanUrl(url));
 						const arrayBuffer = await fetchedImage.arrayBuffer();
 						const buffer = Buffer.from(arrayBuffer);
-						mediaBuffers.push(buffer);
+						mediaObjects.push({
+							type,
+							buffer,
+						});
 					}
 				}
 			}
@@ -96,15 +101,28 @@ export class Scraper {
 			if (post?.media_metadata) {
 				for (const media of Object.values(post.media_metadata)) {
 					const fetchedImage = await fetch(cleanUrl((media as { s: { u: string } }).s.u));
+					let type: 'image' | 'gif';
+
+					if ((media as { e: string }).e == 'Image') {
+						type = 'image';
+					}
+					else {
+						type = 'gif';
+					}
+
 					const arrayBuffer = await fetchedImage.arrayBuffer();
 					const buffer = Buffer.from(arrayBuffer);
-					mediaBuffers.push(buffer);
+					mediaObjects.push({
+						type,
+						buffer,
+					});
 				}
 			}
 
 			// Handle video URLs
 			if (post?.secure_media?.reddit_video?.fallback_url) {
 				const url = `${post.url}/DASHPlaylist.mpd`;
+				const fileID = Date.now();
 
 				const URLs = await this.fetchDASHPlaylist(url).then(this.parseDASHPlaylist);
 
@@ -112,53 +130,80 @@ export class Scraper {
 					const videoUrl = `${post.url}/${URLs.videoUrl}`;
 					const audioUrl = `${post.url}/${URLs.audioUrl}`;
 		
-					const fileID = Date.now();
-		
 					const videoPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.videoUrl}`);
 					const audioPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.audioUrl}`);
-		
+					const combinedOutputPath = Path.resolve(this.downloadPath, `video_${fileID}.mp4`);
+
 					try {
 						await Promise.all([
 							this.downloadFile(videoUrl, videoPath),
 							this.downloadFile(audioUrl, audioPath),
 						]);
-						console.log('Media files downloaded successfully.');
+
+						await this.combineVideoAndAudio(videoPath, audioPath, combinedOutputPath);
+
+						// Push combined file data to media array
+						mediaObjects.push({
+							type: 'video',
+							buffer: await readFile(combinedOutputPath),
+						});
 					}
 					catch (err) {
-						console.error('Error downloading media files:', err);
+						console.error('Error combining video and audio', err);
 					}
-		
-					const combinedOutput = Path.resolve(this.downloadPath, `video_${fileID}.mp4`);
-					await this.combineVideoAndAudio(videoPath, audioPath, combinedOutput);
-		
-					// Delete the separate audio and video files after combining them
-					fs.unlinkSync(videoPath);
-					fs.unlinkSync(audioPath);
-					
-					// Push combined file URL to media array
-					mediaBuffers.push(await readFile(combinedOutput));
-					fs.unlinkSync(combinedOutput);
-					if (post.url) post.url = null;
-
-					console.log('Deleted video and audio files after combining.');
-					console.log(mediaBuffers);
+					finally {
+						// Delete the separate audio and video files after combining or even if an error occurs
+						fs.unlinkSync(videoPath);
+						fs.unlinkSync(audioPath);
+						fs.unlinkSync(combinedOutputPath);
+						if (post.url) post.url = null;
+					}
 				}
+				else {
+					// eslint-disable-next-line no-lonely-if
+					if (post?.secure_media?.reddit_video?.is_gif) {
+						const videoPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.videoUrl}`);
+						const gifPath = Path.resolve(this.downloadPath, `${fileID}_${Path.basename(URLs.videoUrl, Path.extname(URLs.videoUrl))}.gif`);
+					
+						const videoUrl = `${post.url}/${URLs.videoUrl}`;
+					
+						try {
+							await this.downloadFile(videoUrl, videoPath);
 
+							await this.convertVideoToGIF(videoPath, gifPath);
+
+							mediaObjects.push({
+								type: 'gif',
+								buffer: await readFile(gifPath),
+							});
+						}
+						catch (err) {
+							console.error('Error during video-to-GIF conversion:', err);
+						}
+						finally {
+							// Ensure the video file is deleted even if an error occurs
+							fs.unlinkSync(videoPath);
+							fs.unlinkSync(gifPath);
+							if (post.url) post.url = null;
+						}
+					}
+					
+				}
 			}
 
 			// Handle any external URLs
 			if (post?.url) {
-				if (!this.hasFileExtension(post.url) && !post.url.includes('/gallery') && mediaBuffers.every(url => !url.includes(post.url && '.mp4')) && !post.url.includes(post.subreddit)) {
+				if (!this.hasFileExtension(post.url) && !post.url.includes('/gallery') && !post.url.includes(post.subreddit)) {
 					externalUrl = post.url;
 				}
 			}
 
-			const postData = {
+			const postData: Post = {
 				author: authorName || null,
 				subreddit,
 				title: title?.trim(),
 				description: description?.trim() ?? null,
-				media: mediaBuffers.filter(Boolean) || null,
+				media: mediaObjects || null,
 				externalUrl: externalUrl || null,
 				upVotes,
 				downVotes,
@@ -189,7 +234,6 @@ export class Scraper {
 	private async parseDASHPlaylist(xmlData: string): Promise<{ videoUrl: string, audioUrl: string }> {
 		try {
 			const result = await parseStringPromise(xmlData);
-			console.log(JSON.stringify(result, null, 2));
 	
 			const mediaUrls: { videoUrl: string, audioUrl: string } = { videoUrl: '', audioUrl: '' };
 	
@@ -261,7 +305,6 @@ export class Scraper {
 				.videoCodec('libx264')
 				.output(outputPath)
 				.on('end', () => {
-					console.log('Combining finished');
 					resolve();
 				})
 				.on('error', (err) => {
@@ -271,6 +314,26 @@ export class Scraper {
 				.run();
 		});
 	}
+
+	private async convertVideoToGIF(videoPath: string, gifPath: string): Promise<void> {
+		return new Promise((resolve, reject) => {
+			ffmpeg(videoPath)
+				.output(gifPath)
+				.outputOptions([
+					'-vf', 'fps=12,scale=320:-1:flags=lanczos',
+					'-loop', '0',
+				])
+				.on('end', () => {
+					resolve();
+				})
+				.on('error', (err) => {
+					console.error('Error during conversion:', err.message);
+					reject(err);
+				})
+				.run();
+		});
+	}
+
 
 	private hasFileExtension(url: string): boolean {
 		const extensionPattern = /\.[a-zA-Z0-9]+$/;
