@@ -1,4 +1,4 @@
-import { proxyType } from './types';
+import { Post, proxyType } from './types';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import * as Path from 'path';
 import axios from 'axios';
@@ -45,14 +45,14 @@ export class Scraper {
 		}
 	}
 
-	public async fetchPost(postUrl: string) {
+	public async fetchPost(postUrl: string): Promise<Post | { error: string }> {
 		try {
 			// Convert the post url to the reddit's JSON API
 			const jsonUrl = `${postUrl}.json`;
 
 			// Fetch the JSON data of the reddit post
 			const response = await fetch(jsonUrl, this.requestOptions);
-			if (!response.ok) throw new Error('403 Unauthorized, bad cookie maybe?');
+			if (!response.ok) throw new Error('403 Unauthorized, likely due to a bad cookie or malformed/incorrect URL');
 
 			const jsonData = await response.json();
 
@@ -171,6 +171,7 @@ export class Scraper {
 		}
 		catch (error) {
 			console.error('Error fetching the post:', error);
+			return { error: error.message || 'An unknown error occurred' };
 		}
 	}
 
