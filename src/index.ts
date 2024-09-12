@@ -197,7 +197,7 @@ export class Scraper {
 				author: authorName || null,
 				subreddit,
 				title: title?.trim(),
-				description: description?.trim() ?? null,
+				description: description?.trim() === '' ? null : description?.trim(),
 				media: mediaObjects || null,
 				externalUrl: externalUrl || null,
 				upVotes,
