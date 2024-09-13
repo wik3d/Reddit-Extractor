@@ -10,7 +10,7 @@ import { path } from '@ffmpeg-installer/ffmpeg';
 ffmpeg.setFfmpegPath(path);
 
 export class Scraper {
-	private requestOptions: { headers: HeadersInit, agent?: HttpsProxyAgent<string> };
+	private requestOptions: { headers: HeadersInit, agent?: InstanceType<typeof HttpsProxyAgent> };
 	private downloadPath: string;
 
 	constructor(private cookie: string, downloadPath: string = './', private proxy?: proxyType) {
