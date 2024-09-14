@@ -264,7 +264,6 @@ export class Scraper {
 
 		// Set a timeout to switch back to main IP after 5 minutes
 		this.proxySwitchTimeout = setTimeout(() => {
-			console.log('SWITCHING BACK TO MAIN IP');
 			this.usingProxies = false;
 		}, 5 * 60 * 1000);
 	}
