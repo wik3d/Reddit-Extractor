@@ -7,56 +7,36 @@ import ffmpeg from 'fluent-ffmpeg';
 import fs from 'fs';
 import { readFile } from 'fs/promises';
 import { path } from '@ffmpeg-installer/ffmpeg';
+import fetch from 'node-fetch';
+import { CookieJar } from 'tough-cookie';
+import fetchCookie from 'fetch-cookie';
 ffmpeg.setFfmpegPath(path);
 
 export class Scraper {
-	private requestOptions: { headers: HeadersInit, agent?: InstanceType<typeof HttpsProxyAgent> };
+	private agent: InstanceType<typeof HttpsProxyAgent>;
 	private downloadPath: string;
+	private usingProxies = false;
+	private proxySwitchTimeout: NodeJS.Timeout | null = null;
 
-	constructor(private cookie: string, downloadPath: string = './', private proxy?: proxyType) {
-		if (!cookie) throw new Error('A Reddit account cookie must be provided');
-
+	constructor(downloadPath: string = './', private proxy?: proxyType, private forceProxy = false) {
 		this.downloadPath = downloadPath;
 		this.ensureDirectoryExists(this.downloadPath);
-
-		this.requestOptions = {
-			headers: {
-				'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0',
-				'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8',
-				'Accept-Language': 'en-GB,en;q=0.5',
-				'Accept-Encoding': 'gzip, deflate, br, zstd',
-				'Upgrade-Insecure-Requests': '1',
-				'Sec-Fetch-Dest': 'document',
-				'Sec-Fetch-Mode': 'navigate',
-				'Sec-Fetch-Site': 'none',
-				'Sec-Fetch-User': '?1',
-				'Connection': 'keep-alive',
-				'Cookie': this.cookie,
-				'Priority': 'u=0, i',
-				'TE': 'trailers',
-			},
-		};
 
 		if (proxy) {
 			const proxyAgent = new HttpsProxyAgent(
 				`${this.proxy.protocol}://${Object.keys(this.proxy.auth || {}).length > 0 ? `${this.proxy.auth?.username}:${this.proxy.auth?.password}` : ''}@${this.proxy.host}:${this.proxy.port}`,
 			);
-			this.requestOptions.agent = proxyAgent;
+			this.agent = proxyAgent;
 		}
 	}
 
 	public async fetchPost(postUrl: string): Promise<Post | { error: string }> {
+		const jsonUrl = `${postUrl}.json`;
+	
 		try {
-			// Convert the post url to the reddit's JSON API
-			const jsonUrl = `${postUrl}.json`;
-
-			// Fetch the JSON data of the reddit post
-			const response = await fetch(jsonUrl, this.requestOptions);
-			if (!response.ok) throw new Error(`${response.status} - ${response.statusText}`);
-
-			const jsonData = await response.json();
-
-			const post = jsonData[0]?.data?.children?.[0]?.data;
+			const response = await this.fetchWithRetry(jsonUrl);
+	
+			const post = response.data[0]?.data?.children?.[0]?.data;
 			const authorName = post?.author || null;
 			const subreddit = post?.subreddit_name_prefixed || null;
 			const title = post?.title || null;
@@ -68,23 +48,21 @@ export class Scraper {
 			const comments = post?.num_comments || 0;
 			const postedAt = post?.created_utc;
 			const isOver18: boolean = post?.over_18;
-
-			// Basically if any URL contains 'amp;' then it wont work. Im so lucky I even found this out cuz otherwise that wouldve been so much hassle
+	
+			if (description === '[deleted]') return { error: 'Post has been deleted' };
+	
 			const cleanUrl = (url: string) => url.replace(/amp;/g, '');
-
-			// Handle image URLs
+	
 			if (post?.preview?.images) {
 				for (const image of post.preview.images) {
 					let url = image.source.url;
 					let type: 'image' | 'gif' = 'image';
-
-					// If it's a GIF with format=png, use the URL from variants
+	
 					if (url.includes('.gif') && url.includes('?format=png') && image.variants?.gif?.source?.url) {
 						url = cleanUrl(image.variants.gif.source.url);
 						type = 'gif';
 					}
-
-					// Get rid of any external preview cuz they're low quality and just not needed
+	
 					if (!url.startsWith('https://external-preview')) {
 						const fetchedImage = await fetch(cleanUrl(url));
 						const arrayBuffer = await fetchedImage.arrayBuffer();
@@ -96,20 +74,19 @@ export class Scraper {
 					}
 				}
 			}
-
-			// Sometimes it has media_metadata and other times it doesn't, not really sure as to why but there is never both from what I've tested, there should be no duplicates
+	
 			if (post?.media_metadata) {
 				for (const media of Object.values(post.media_metadata)) {
 					const fetchedImage = await fetch(cleanUrl((media as { s: { u: string } }).s.u));
 					let type: 'image' | 'gif';
-
+	
 					if ((media as { e: string }).e == 'Image') {
 						type = 'image';
 					}
 					else {
 						type = 'gif';
 					}
-
+	
 					const arrayBuffer = await fetchedImage.arrayBuffer();
 					const buffer = Buffer.from(arrayBuffer);
 					mediaObjects.push({
@@ -118,31 +95,27 @@ export class Scraper {
 					});
 				}
 			}
-
-			// Handle video URLs
+	
 			if (post?.secure_media?.reddit_video?.fallback_url) {
 				const url = `${post.url}/DASHPlaylist.mpd`;
 				const fileID = Date.now();
-
 				const URLs = await this.fetchDASHPlaylist(url).then(this.parseDASHPlaylist);
-
+	
 				if (URLs.audioUrl) {
 					const videoUrl = `${post.url}/${URLs.videoUrl}`;
 					const audioUrl = `${post.url}/${URLs.audioUrl}`;
-		
 					const videoPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.videoUrl}`);
 					const audioPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.audioUrl}`);
 					const combinedOutputPath = Path.resolve(this.downloadPath, `video_${fileID}.mp4`);
-
+	
 					try {
 						await Promise.all([
 							this.downloadFile(videoUrl, videoPath),
 							this.downloadFile(audioUrl, audioPath),
 						]);
-
+	
 						await this.combineVideoAndAudio(videoPath, audioPath, combinedOutputPath);
-
-						// Push combined file data to media array
+	
 						mediaObjects.push({
 							type: 'video',
 							buffer: await readFile(combinedOutputPath),
@@ -152,47 +125,40 @@ export class Scraper {
 						console.error('Error combining video and audio', err);
 					}
 					finally {
-						// Delete the separate audio and video files after combining or even if an error occurs
 						fs.unlinkSync(videoPath);
 						fs.unlinkSync(audioPath);
 						fs.unlinkSync(combinedOutputPath);
 						if (post.url) post.url = null;
 					}
 				}
-				else {
-					// eslint-disable-next-line no-lonely-if
-					if (post?.secure_media?.reddit_video?.is_gif) {
-						const videoPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.videoUrl}`);
-						const videoUrl = `${post.url}/${URLs.videoUrl}`;
-					
-						try {
-							await this.downloadFile(videoUrl, videoPath);
-
-							mediaObjects.push({
-								type: 'video',
-								buffer: await readFile(videoPath),
-							});
-						}
-						catch (err) {
-							console.error('Error during video-to-GIF conversion:', err);
-						}
-						finally {
-							// Ensure the video file is deleted even if an error occurs
-							fs.unlinkSync(videoPath);
-							if (post.url) post.url = null;
-						}
+				else if (post?.secure_media?.reddit_video?.is_gif) {
+					const videoPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.videoUrl}`);
+					const videoUrl = `${post.url}/${URLs.videoUrl}`;
+	
+					try {
+						await this.downloadFile(videoUrl, videoPath);
+	
+						mediaObjects.push({
+							type: 'video',
+							buffer: await readFile(videoPath),
+						});
 					}
-					
+					catch (err) {
+						console.error('Error during gif (video) download', err);
+					}
+					finally {
+						fs.unlinkSync(videoPath);
+						if (post.url) post.url = null;
+					}
 				}
 			}
-
-			// Handle any external URLs
+	
 			if (post?.url) {
 				if (!this.hasFileExtension(post.url) && !post.url.includes('/gallery') && !post.url.includes(post.subreddit)) {
 					externalUrl = post.url;
 				}
 			}
-
+	
 			const postData: Post = {
 				author: authorName || null,
 				subreddit,
@@ -206,13 +172,89 @@ export class Scraper {
 				isOver18,
 				postedAt,
 			};
-
+	
 			return postData;
 		}
 		catch (error) {
 			console.error('Error fetching the post:', error);
 			return { error: error.message || 'An unknown error occurred' };
 		}
+	}
+
+	// Makes requests with brand new cookies every time
+	private async makeRequest(url: string, agent: InstanceType<typeof HttpsProxyAgent> | null = null) {
+		const jar = new CookieJar();
+		const fetchWithCookies = fetchCookie(fetch, jar);
+
+		const headers = {
+			'Connection': 'close',
+		};
+
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const response = await fetchWithCookies(url, { agent, headers } as any) as Response;
+
+		if (!response.ok) {
+			throw new Error(`Request failed with status: ${response.status}`);
+		}
+
+		const data = await response.json();
+		const cookies = await jar.getCookies(url);
+
+		return { data, cookies };
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	private async fetchWithRetry(url: string, retries: number = 5): Promise<any> {
+		let agent: InstanceType<typeof HttpsProxyAgent> | null = null;
+    
+		if ((this.usingProxies && this.agent) || this.forceProxy) {
+			agent = this.agent;
+		}
+
+		try {
+			const response = await this.makeRequest(url, agent);
+			return response;
+		}
+		catch (error) {
+			if (retries <= 0) {
+				console.error('Max retries (5) reached. Throwing error.');
+				throw error;
+			}
+
+			if (error.message.includes('403')) {
+				console.error(`Error 403 encountered: ${error.message}. Retrying with new cookie... (${5 - retries + 1})`);
+				return this.fetchWithRetry(url, retries - 1);
+			}
+			else if (error.message.includes('429')) {
+				if (!this.usingProxies && this.agent) {
+					console.error(`Error 429 encountered: ${error.message}. Switching to proxy if available... (${5 - retries + 1})`);
+					this.activateProxyMode();
+				}
+				return this.fetchWithRetry(url, retries - 1);
+			}
+			else if (error.code === 'ECONNRESET') {
+				console.error(`Network error encountered: ${error.message}. Retrying request... (${5 - retries + 1})`);
+				return this.fetchWithRetry(url, retries - 1);
+			}
+			else {
+				throw error;
+			}
+		}
+	}
+
+	private activateProxyMode() {
+		this.usingProxies = true;
+
+		// If there's an existing timeout, clear it
+		if (this.proxySwitchTimeout) {
+			clearTimeout(this.proxySwitchTimeout);
+		}
+
+		// Set a timeout to switch back to main IP after 5 minutes
+		this.proxySwitchTimeout = setTimeout(() => {
+			console.log('SWITCHING BACK TO MAIN IP');
+			this.usingProxies = false;
+		}, 5 * 60 * 1000);
 	}
 
 	private async fetchDASHPlaylist(playlistUrl: string): Promise<string> {
