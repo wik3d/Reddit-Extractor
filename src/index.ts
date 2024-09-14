@@ -31,11 +31,13 @@ export class Scraper {
 	}
 
 	public async fetchPost(postUrl: string): Promise<Post | { error: string }> {
+		// Convert the post url to the reddit's JSON API url
 		const jsonUrl = `${postUrl}.json`;
-	
+
 		try {
+			// Fetch the JSON data of the reddit post
 			const response = await this.fetchWithRetry(jsonUrl);
-	
+
 			const post = response.data[0]?.data?.children?.[0]?.data;
 			const authorName = post?.author || null;
 			const subreddit = post?.subreddit_name_prefixed || null;
@@ -48,21 +50,25 @@ export class Scraper {
 			const comments = post?.num_comments || 0;
 			const postedAt = post?.created_utc;
 			const isOver18: boolean = post?.over_18;
-	
+
 			if (description === '[deleted]') return { error: 'Post has been deleted' };
-	
+
+			// Basically if any media URL contains 'amp;' then it wont work, so we need to remove
 			const cleanUrl = (url: string) => url.replace(/amp;/g, '');
-	
+
+			// Handle image URLs
 			if (post?.preview?.images) {
 				for (const image of post.preview.images) {
 					let url = image.source.url;
 					let type: 'image' | 'gif' = 'image';
-	
+
+					// If it's a GIF with format=png, use the URL from variants
 					if (url.includes('.gif') && url.includes('?format=png') && image.variants?.gif?.source?.url) {
 						url = cleanUrl(image.variants.gif.source.url);
 						type = 'gif';
 					}
-	
+
+					// Get rid of any external preview cuz they're low quality and just not needed
 					if (!url.startsWith('https://external-preview')) {
 						const fetchedImage = await fetch(cleanUrl(url));
 						const arrayBuffer = await fetchedImage.arrayBuffer();
@@ -74,7 +80,8 @@ export class Scraper {
 					}
 				}
 			}
-	
+
+			// Sometimes it has media_metadata and other times it doesn't, not really sure as to why but there is never both from what I've tested, there should be no duplicates
 			if (post?.media_metadata) {
 				for (const media of Object.values(post.media_metadata)) {
 					const fetchedImage = await fetch(cleanUrl((media as { s: { u: string } }).s.u));
@@ -95,27 +102,29 @@ export class Scraper {
 					});
 				}
 			}
-	
+
+			// Handle video URLs
 			if (post?.secure_media?.reddit_video?.fallback_url) {
 				const url = `${post.url}/DASHPlaylist.mpd`;
 				const fileID = Date.now();
 				const URLs = await this.fetchDASHPlaylist(url).then(this.parseDASHPlaylist);
-	
+
 				if (URLs.audioUrl) {
 					const videoUrl = `${post.url}/${URLs.videoUrl}`;
 					const audioUrl = `${post.url}/${URLs.audioUrl}`;
 					const videoPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.videoUrl}`);
 					const audioPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.audioUrl}`);
 					const combinedOutputPath = Path.resolve(this.downloadPath, `video_${fileID}.mp4`);
-	
+
 					try {
 						await Promise.all([
 							this.downloadFile(videoUrl, videoPath),
 							this.downloadFile(audioUrl, audioPath),
 						]);
-	
+
 						await this.combineVideoAndAudio(videoPath, audioPath, combinedOutputPath);
-	
+
+						// Push combined file data to media array
 						mediaObjects.push({
 							type: 'video',
 							buffer: await readFile(combinedOutputPath),
@@ -125,6 +134,7 @@ export class Scraper {
 						console.error('Error combining video and audio', err);
 					}
 					finally {
+						// Delete the separate audio and video files after combining or even if an error occurs
 						fs.unlinkSync(videoPath);
 						fs.unlinkSync(audioPath);
 						fs.unlinkSync(combinedOutputPath);
@@ -134,7 +144,7 @@ export class Scraper {
 				else if (post?.secure_media?.reddit_video?.is_gif) {
 					const videoPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.videoUrl}`);
 					const videoUrl = `${post.url}/${URLs.videoUrl}`;
-	
+
 					try {
 						await this.downloadFile(videoUrl, videoPath);
 	
@@ -152,13 +162,14 @@ export class Scraper {
 					}
 				}
 			}
-	
+
+			// Handle any external URLs
 			if (post?.url) {
 				if (!this.hasFileExtension(post.url) && !post.url.includes('/gallery') && !post.url.includes(post.subreddit)) {
 					externalUrl = post.url;
 				}
 			}
-	
+
 			const postData: Post = {
 				author: authorName || null,
 				subreddit,
@@ -172,7 +183,7 @@ export class Scraper {
 				isOver18,
 				postedAt,
 			};
-	
+
 			return postData;
 		}
 		catch (error) {
