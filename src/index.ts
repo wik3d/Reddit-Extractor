@@ -17,10 +17,12 @@ export class Scraper {
 	private downloadPath: string;
 	private usingProxies = false;
 	private proxySwitchTimeout: NodeJS.Timeout | null = null;
+	private jar: CookieJar;
 
 	constructor(downloadPath: string = './', private proxy?: proxyType, private forceProxy = false) {
 		this.downloadPath = downloadPath;
 		this.ensureDirectoryExists(this.downloadPath);
+		this.jar = new CookieJar();
 
 		if (proxy) {
 			const proxyAgent = new HttpsProxyAgent(
@@ -192,10 +194,9 @@ export class Scraper {
 		}
 	}
 
-	// Makes requests with brand new cookies every time
+	// Makes requests with a new set of cookies each time by clearing the cookie jar after each request
 	private async makeRequest(url: string, agent: InstanceType<typeof HttpsProxyAgent> | null = null) {
-		const jar = new CookieJar();
-		const fetchWithCookies = fetchCookie(fetch, jar);
+		const fetchWithCookies = fetchCookie(fetch, this.jar);
 
 		const headers = {
 			'Connection': 'close',
@@ -209,7 +210,7 @@ export class Scraper {
 		}
 
 		const data = await response.json();
-		const cookies = await jar.getCookies(url);
+		const cookies = await this.jar.removeAllCookies();
 
 		return { data, cookies };
 	}
