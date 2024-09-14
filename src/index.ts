@@ -203,7 +203,7 @@ export class Scraper {
 		};
 
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const response = await fetchWithCookies(url, { agent, headers } as any) as Response;
+		const response = await fetchWithCookies(url, { agent, headers } as any) as unknown as Response;
 
 		if (!response.ok) {
 			throw new Error(`Request failed with status: ${response.status}`);
