@@ -17,7 +17,7 @@ export interface Post {
     downVotes: number;
     comments: number;
     isOver18: boolean;
-    postedAt: Date;
+    postedAt: number;
     id: string;
     subreddit_id: string;
 }
