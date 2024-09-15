@@ -94,8 +94,8 @@ export class Scraper {
 		try {
 			const authorName = post?.author || null;
 			const subreddit = post?.subreddit_name_prefixed || null;
-			const title = post?.title?.trim() === ('' || undefined) ? null : post?.title?.trim();
-			const description = post?.selftext?.trim() === ('' || undefined) ? null : post?.selftext?.trim();
+			const title = post?.title?.trim() ? post.title.trim() : null;
+			const description = post?.selftext?.trim() ? post.selftext.trim() : null;
 			let externalUrl: string = null;
 			const mediaObjects: Media[] = [];
 			const upVotes = post?.ups || 0;
