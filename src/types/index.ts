@@ -6,6 +6,7 @@ export interface proxyType {
 }
 
 export interface Post {
+    ok: boolean;
     author: string | null;
     subreddit: string;
     title?: string;

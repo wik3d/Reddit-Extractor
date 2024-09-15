@@ -33,7 +33,7 @@ export class Scraper {
 	}
 
 	// Fetch a single reddit post
-	public async fetchPost(postUrl: string, returnMedia: boolean = true): Promise<Post | { error: string }> {
+	public async fetchPost(postUrl: string, returnMedia: boolean = true): Promise<Post | { ok: boolean, error: string }> {
 		// Convert the post url to the reddit's JSON API url
 		const jsonUrl = `${postUrl}.json`;
 
@@ -51,15 +51,15 @@ export class Scraper {
 		}
 		catch (error) {
 			if (error.message.includes('404')) {
-				return { error: '404 Post not found' };
+				return { ok: false, error: '404 Post not found' };
 			}
 			console.error('Error fetching post:', error);
-			return { error: error.message || 'An unknown error occurred' };
+			return { ok: false, error: error.message || 'An unknown error occurred' };
 		}
 	}
 
 	// Fetch multiple posts from a subreddit
-	public async fetchPosts(subreddit: string, postLimit: number, returnMedia: boolean = true): Promise<(Post | { error: string })[]> {
+	public async fetchPosts(subreddit: string, postLimit: number, returnMedia: boolean = true): Promise<(Post | { ok: boolean, error: string })[]> {
 		// Construct the subreddit URL from the provided parameters
 		const jsonUrl = `https://www.reddit.com/r/${subreddit}/new.json?limit=${postLimit}&raw_json=1&sr_detail=1`;
 
@@ -68,7 +68,7 @@ export class Scraper {
 			const response = await this.fetchWithRetry(jsonUrl);
 			const posts = response.data?.data?.children || [];
 	
-			const postDataArray: Array<Post | { error: string }> = [];
+			const postDataArray: Array<Post | { ok: boolean, error: string }> = [];
 	
 			for (const postObject of posts) {
 				const post = postObject?.data;
@@ -82,15 +82,15 @@ export class Scraper {
 		}
 		catch (error) {
 			if (error.message.includes('404')) {
-				return [{ error: '404 Subreddit not found' }];
+				return [{ ok: false, error: '404 Subreddit not found' }];
 			}
 			console.error('Error fetching subreddit posts:', error);
-			return [{ error: error.message || 'An unknown error occurred' }];
+			return [{ ok: false, error: error.message || 'An unknown error occurred' }];
 		}
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private async processSinglePost(post: any, returnMedia: boolean): Promise<Post | { error: string }> {
+	private async processSinglePost(post: any, returnMedia: boolean): Promise<Post | { ok: boolean, error: string }> {
 		try {
 			const authorName = post?.author || null;
 			const subreddit = post?.subreddit_name_prefixed || null;
@@ -106,7 +106,7 @@ export class Scraper {
 			const id = post?.id;
 			const subreddit_id = post?.subreddit_id;
 
-			if (description === '[deleted]') return { error: 'Post has been deleted' };
+			if (description === '[deleted]') return { ok: false, error: 'Post has been deleted' };
 
 			// Basically if any media URL contains 'amp;' then it wont work, so we need to remove
 			const cleanUrl = (url: string) => url.replace(/amp;/g, '');
@@ -226,6 +226,7 @@ export class Scraper {
 			}
 
 			const postData: Post = {
+				ok: true,
 				author: authorName,
 				subreddit,
 				title: title,
@@ -245,7 +246,7 @@ export class Scraper {
 		}
 		catch (error) {
 			console.error('Error fetching the post:', error);
-			return { error: error.message || 'An unknown error occurred' };
+			return { ok: false, error: error.message || 'An unknown error occurred' };
 		}
 	}
 
