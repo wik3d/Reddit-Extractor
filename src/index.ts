@@ -105,6 +105,7 @@ export class Scraper {
 			const isOver18: boolean = post?.over_18;
 			const id = post?.id;
 			const subreddit_id = post?.subreddit_id;
+			const postUrl = post.permalink;
 
 			if (description === '[deleted]') return { ok: false, error: 'Post has been deleted' };
 
@@ -240,6 +241,7 @@ export class Scraper {
 				postedAt,
 				id,
 				subreddit_id,
+				url: postUrl,
 			};
 
 			return postData;

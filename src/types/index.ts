@@ -20,6 +20,7 @@ export interface Post {
     postedAt: number;
     id: string;
     subreddit_id: string;
+    url: string;
 }
 
 export interface Media {
