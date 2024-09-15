@@ -140,13 +140,15 @@ export class Scraper {
 			// Sometimes it has media_metadata and other times it doesn't, not really sure as to why but there is never both from what I've tested, there should be no duplicates
 			if (post?.media_metadata && returnMedia) {
 				for (const media of Object.values(post.media_metadata)) {
-					const fetchedImage = await fetch(cleanUrl((media as { s: { u: string } }).s.u));
+					let fetchedImage: Response;
 					let type: 'image' | 'gif';
-	
+
 					if ((media as { e: string }).e == 'Image') {
+						fetchedImage = await fetch(cleanUrl((media as { s: { u: string } }).s.u));
 						type = 'image';
 					}
 					else {
+						fetchedImage = await fetch(cleanUrl((media as { s: { gif: string } }).s.gif));
 						type = 'gif';
 					}
 	
