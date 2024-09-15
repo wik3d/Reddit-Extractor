@@ -18,6 +18,7 @@ export interface Post {
     isOver18: boolean;
     postedAt: Date;
     id: string;
+    subreddit_id: string;
 }
 
 export interface Media {
