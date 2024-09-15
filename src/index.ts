@@ -94,9 +94,9 @@ export class Scraper {
 		try {
 			const authorName = post?.author || null;
 			const subreddit = post?.subreddit_name_prefixed || null;
-			const title = post?.title || null;
-			const description = post?.selftext || null;
-			let externalUrl: string;
+			const title = post?.title?.trim() === ('' || undefined) ? null : post?.title?.trim();
+			const description = post?.selftext?.trim() === ('' || undefined) ? null : post?.selftext?.trim();
+			let externalUrl: string = null;
 			const mediaObjects: Media[] = [];
 			const upVotes = post?.ups || 0;
 			const downVotes = upVotes ? Math.ceil((1 - post?.upvote_ratio) * upVotes) : 0;
@@ -225,12 +225,12 @@ export class Scraper {
 			}
 
 			const postData: Post = {
-				author: authorName || null,
+				author: authorName,
 				subreddit,
-				title: title?.trim(),
-				description: description?.trim() === ('' || undefined) ? null : description?.trim(),
-				media: mediaObjects || [],
-				externalUrl: externalUrl || null,
+				title: title,
+				description: description,
+				media: mediaObjects,
+				externalUrl: externalUrl,
 				upVotes,
 				downVotes,
 				comments,
