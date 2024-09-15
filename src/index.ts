@@ -32,15 +32,66 @@ export class Scraper {
 		}
 	}
 
-	public async fetchPost(postUrl: string): Promise<Post | { error: string }> {
+	// Fetch a single reddit post
+	public async fetchPost(postUrl: string, returnMedia: boolean = true): Promise<Post | { error: string }> {
 		// Convert the post url to the reddit's JSON API url
 		const jsonUrl = `${postUrl}.json`;
 
 		try {
 			// Fetch the JSON data of the reddit post
 			const response = await this.fetchWithRetry(jsonUrl);
+			const post = response.data[0]?.data?.children[0]?.data;
 
-			const post = response.data[0]?.data?.children?.[0]?.data;
+			if (!post) {
+				throw new Error('Invalid post data');
+			}
+
+			const fetchedPost = await this.processSinglePost(post, returnMedia);
+			return fetchedPost;
+		}
+		catch (error) {
+			if (error.message.includes('404')) {
+				return { error: '404 Post not found' };
+			}
+			console.error('Error fetching post:', error);
+			return { error: error.message || 'An unknown error occurred' };
+		}
+	}
+
+	// Fetch multiple posts from a subreddit
+	public async fetchPosts(subreddit: string, postLimit: number, returnMedia: boolean = true): Promise<(Post | { error: string })[]> {
+		// Construct the subreddit URL from the provided parameters
+		const jsonUrl = `https://www.reddit.com/r/${subreddit}/new.json?limit=${postLimit}&raw_json=1&sr_detail=1`;
+
+		try {
+			// Fetch JSON data of the subreddit posts
+			const response = await this.fetchWithRetry(jsonUrl);
+			const posts = response.data?.data?.children || [];
+	
+			const postDataArray: Array<Post | { error: string }> = [];
+	
+			for (const postObject of posts) {
+				const post = postObject?.data;
+				if (!post) continue;
+	
+				const fetchedPost = await this.processSinglePost(post, returnMedia);
+				postDataArray.push(fetchedPost);
+			}
+	
+			return postDataArray;
+		}
+		catch (error) {
+			if (error.message.includes('404')) {
+				return [{ error: '404 Subreddit not found' }];
+			}
+			console.error('Error fetching subreddit posts:', error);
+			return [{ error: error.message || 'An unknown error occurred' }];
+		}
+	}
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	private async processSinglePost(post: any, returnMedia: boolean): Promise<Post | { error: string }> {
+		try {
 			const authorName = post?.author || null;
 			const subreddit = post?.subreddit_name_prefixed || null;
 			const title = post?.title || null;
@@ -52,6 +103,7 @@ export class Scraper {
 			const comments = post?.num_comments || 0;
 			const postedAt = post?.created_utc;
 			const isOver18: boolean = post?.over_18;
+			const id = post?.id;
 
 			if (description === '[deleted]') return { error: 'Post has been deleted' };
 
@@ -59,7 +111,7 @@ export class Scraper {
 			const cleanUrl = (url: string) => url.replace(/amp;/g, '');
 
 			// Handle image URLs
-			if (post?.preview?.images) {
+			if (post?.preview?.images && returnMedia) {
 				for (const image of post.preview.images) {
 					let url = image.source.url;
 					let type: 'image' | 'gif' = 'image';
@@ -84,7 +136,7 @@ export class Scraper {
 			}
 
 			// Sometimes it has media_metadata and other times it doesn't, not really sure as to why but there is never both from what I've tested, there should be no duplicates
-			if (post?.media_metadata) {
+			if (post?.media_metadata && returnMedia) {
 				for (const media of Object.values(post.media_metadata)) {
 					const fetchedImage = await fetch(cleanUrl((media as { s: { u: string } }).s.u));
 					let type: 'image' | 'gif';
@@ -106,7 +158,7 @@ export class Scraper {
 			}
 
 			// Handle video URLs
-			if (post?.secure_media?.reddit_video?.fallback_url) {
+			if (post?.secure_media?.reddit_video?.fallback_url && returnMedia) {
 				const url = `${post.url}/DASHPlaylist.mpd`;
 				const fileID = Date.now();
 				const URLs = await this.fetchDASHPlaylist(url).then(this.parseDASHPlaylist);
@@ -176,14 +228,15 @@ export class Scraper {
 				author: authorName || null,
 				subreddit,
 				title: title?.trim(),
-				description: description?.trim() === '' ? null : description?.trim(),
-				media: mediaObjects || null,
+				description: description?.trim() === ('' || undefined) ? null : description?.trim(),
+				media: mediaObjects || [],
 				externalUrl: externalUrl || null,
 				upVotes,
 				downVotes,
 				comments,
 				isOver18,
 				postedAt,
+				id,
 			};
 
 			return postData;
