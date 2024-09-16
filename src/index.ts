@@ -91,11 +91,18 @@ export class Scraper {
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private async processSinglePost(post: any, returnMedia: boolean): Promise<Post | { ok: boolean, error: string }> {
+		const removePreviewLinksFromDesc = (text: string): string | null => {
+			if (!text) return null;
+			const redditPreviewLinkPattern = /https:\/\/preview\.redd\.it\/\S+/g;
+			const cleanedText = text?.replace(redditPreviewLinkPattern, '');
+			return cleanedText?.trim()?.replace(/\n+/g, ' ');
+		};
+
 		try {
 			const authorName = post?.author || null;
 			const subreddit = post?.subreddit_name_prefixed || null;
 			const title = post?.title?.trim() ? post.title.trim() : null;
-			const description = post?.selftext?.trim() ? post.selftext.trim() : null;
+			const description = removePreviewLinksFromDesc(post?.selftext);
 			let externalUrl: string = null;
 			const mediaObjects: Media[] = [];
 			const upVotes = post?.ups || 0;
