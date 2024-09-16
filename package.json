@@ -1,5 +1,5 @@
 {
-  "name": "reddit-scraper",
+  "name": "reddit-extractor",
   "version": "1.0.0",
   "description": "Gets Reddit post data",
   "main": "production/_exports.js",
@@ -11,7 +11,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/wik3d/Reddit-Scraper"
+    "url": "git+https://github.com/wik3d/Reddit-Extractor"
   },
   "keywords": [],
   "author": "Jack",
