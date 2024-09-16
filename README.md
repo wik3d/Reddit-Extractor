@@ -1,4 +1,4 @@
-# Reddit-Scraper <img align="left" width="132" height="132" src="./logo.jpeg">
+# Reddit-Extractor <img align="left" width="132" height="132" src="./logo.jpeg">
 
 An effective Reddit post fetcher, bypassing JSON API restrictions with proxies.
 <br><br><br>
