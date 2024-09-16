@@ -165,7 +165,10 @@ export class Scraper {
 			if (post?.secure_media?.reddit_video?.fallback_url && returnMedia) {
 				const url = `${post.url}/DASHPlaylist.mpd`;
 				const fileID = Date.now();
-				const URLs = await this.fetchDASHPlaylist(url).then(this.parseDASHPlaylist);
+				const URLs = await this.fetchDASHPlaylist(url).then(this.parseDASHPlaylist).catch((err) => {
+					if (err.message.includes('403')) throw new Error('DASH Playlist not available yet, the post may be too recent');
+					else throw err;
+				});
 
 				if (URLs.audioUrl) {
 					const videoUrl = `${post.url}/${URLs.videoUrl}`;
