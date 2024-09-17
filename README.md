@@ -18,7 +18,7 @@ import { Scraper, Post } from 'reddit-extractor';
 // Proxies are not required, but recommended for large applications
 // Reddit's JSON API rate limits if you make ~100 requests within quick succession
 const proxyConfig = {
-  protocol: '',
+	protocol: '',
 	host: '',
 	port: 12321,
 	auth: {
