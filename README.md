@@ -27,7 +27,7 @@ const proxyConfig = {
 	},
 };
 
-const RedditExtractor = new Scraper('./tempFIles', proxyConfig)
+const RedditExtractor = new Scraper('./tempFiles', proxyConfig)
 ```
 <br>
 
