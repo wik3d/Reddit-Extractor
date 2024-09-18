@@ -10,7 +10,10 @@ import { path } from '@ffmpeg-installer/ffmpeg';
 import fetch from 'node-fetch';
 import { CookieJar } from 'tough-cookie';
 import fetchCookie from 'fetch-cookie';
+import { exec } from 'child_process';
+import util from 'util';
 ffmpeg.setFfmpegPath(path);
+const execPromise = util.promisify(exec);
 
 export class Scraper {
 	private agent: InstanceType<typeof HttpsProxyAgent>;
@@ -147,20 +150,41 @@ export class Scraper {
 			// Sometimes it has media_metadata and other times it doesn't, not really sure as to why but there is never both from what I've tested, there should be no duplicates
 			if (post?.media_metadata && returnMedia) {
 				for (const media of Object.values(post.media_metadata)) {
-					let fetchedImage;
-					let type: 'image' | 'gif';
+					let buffer;
+					let type: 'image' | 'gif' | 'video';
 
 					if ((media as { e: string }).e == 'Image') {
-						fetchedImage = await fetch(cleanUrl((media as { s: { u: string } }).s.u)) as unknown as Response;
+						const fetchedMedia = await fetch(cleanUrl((media as { s: { u: string } }).s.u)) as unknown as Response;
+						const arrayBuffer = await fetchedMedia.arrayBuffer();
+						buffer = Buffer.from(arrayBuffer);
 						type = 'image';
 					}
-					else {
-						fetchedImage = await fetch(cleanUrl((media as { s: { gif: string } }).s.gif)) as unknown as Response;
+					else if ((media as { isGif: string }).isGif) {
+						const fetchedMedia = await fetch(cleanUrl((media as { s: { gif: string } }).s.gif)) as unknown as Response;
+						const arrayBuffer = await fetchedMedia.arrayBuffer();
+						buffer = Buffer.from(arrayBuffer);
 						type = 'gif';
 					}
-	
-					const arrayBuffer = await fetchedImage.arrayBuffer();
-					const buffer = Buffer.from(arrayBuffer);
+					else if ((media as { e: string, dashUrl: string }).e === 'RedditVideo') {
+						const fileID = Date.now();
+						const videoPath = Path.resolve(this.downloadPath, `${fileID}_DASH_TempVideo.mp4`);
+
+						// Use ffmpeg to directly process the DASH URL and convert to MP4
+						try {
+							const command = `ffmpeg -i "${(media as { dashUrl: string }).dashUrl}" -c copy "${videoPath}"`;
+							await execPromise(command);
+							console.log('Video downloaded and converted to MP4.');
+							type = 'video';
+							buffer = await readFile(videoPath);
+						}
+						catch (error) {
+							console.error('Error during download and conversion:', error);
+						}
+						finally {
+							fs.unlinkSync(videoPath);
+						}
+					}
+
 					mediaObjects.push({
 						type,
 						buffer,
@@ -171,27 +195,28 @@ export class Scraper {
 			// Handle video URLs
 			if (post?.secure_media?.reddit_video?.fallback_url && returnMedia) {
 				const url = `${post.url}/DASHPlaylist.mpd`;
+
 				const fileID = Date.now();
 				const URLs = await this.fetchDASHPlaylist(url).then(this.parseDASHPlaylist).catch((err) => {
 					if (err.message.includes('403')) throw new Error('DASH Playlist not available yet, the post may be too recent');
 					else throw err;
 				});
-
+		
 				if (URLs.audioUrl) {
 					const videoUrl = `${post.url}/${URLs.videoUrl}`;
 					const audioUrl = `${post.url}/${URLs.audioUrl}`;
 					const videoPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.videoUrl}`);
 					const audioPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.audioUrl}`);
 					const combinedOutputPath = Path.resolve(this.downloadPath, `video_${fileID}.mp4`);
-
+		
 					try {
 						await Promise.all([
 							this.downloadFile(videoUrl, videoPath),
 							this.downloadFile(audioUrl, audioPath),
 						]);
-
+		
 						await this.combineVideoAndAudio(videoPath, audioPath, combinedOutputPath);
-
+		
 						// Push combined file data to media array
 						mediaObjects.push({
 							type: 'video',
@@ -212,10 +237,10 @@ export class Scraper {
 				else if (post?.secure_media?.reddit_video?.is_gif) {
 					const videoPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.videoUrl}`);
 					const videoUrl = `${post.url}/${URLs.videoUrl}`;
-
+		
 					try {
 						await this.downloadFile(videoUrl, videoPath);
-	
+		
 						mediaObjects.push({
 							type: 'video',
 							buffer: await readFile(videoPath),
@@ -396,7 +421,7 @@ export class Scraper {
 			throw error;
 		}
 	}
-	
+
 	private async downloadFile(url: string, outputPath: string) {
 		const writer = fs.createWriteStream(outputPath);
 	
