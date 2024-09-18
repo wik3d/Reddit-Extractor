@@ -42,5 +42,5 @@ const post = await Scraper.fetchPost(postUrl);
 ```ts
 // Will return the 5 most recent posts from r/memes
 const subreddit = 'memes';
-const post = await redditScraper.fetchPosts('memes', 5);
+const post = await redditScraper.fetchPosts(subreddit, 5);
 ```
