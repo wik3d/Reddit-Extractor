@@ -36,7 +36,7 @@ export class Scraper {
 	}
 
 	// Fetch a single reddit post
-	public async fetchPost(postUrl: string, returnMedia: boolean = true): Promise<Post | { ok: boolean, error: string }> {
+	public async fetchPost(postUrl: string, returnMedia: boolean = true, maxVideoSeconds: number | null = null): Promise<Post | { ok: boolean, error: string }> {
 		// Convert the post url to the reddit's JSON API url
 		const jsonUrl = `${postUrl}.json`;
 
@@ -49,7 +49,7 @@ export class Scraper {
 				throw new Error('Invalid post data');
 			}
 
-			const fetchedPost = await this.processSinglePost(post, returnMedia);
+			const fetchedPost = await this.processSinglePost(post, returnMedia, maxVideoSeconds);
 			return fetchedPost;
 		}
 		catch (error) {
@@ -62,7 +62,7 @@ export class Scraper {
 	}
 
 	// Fetch multiple posts from a subreddit
-	public async fetchPosts(subreddit: string, postLimit: number, returnMedia: boolean = true): Promise<(Post | { ok: boolean, error: string })[]> {
+	public async fetchPosts(subreddit: string, postLimit: number, returnMedia: boolean = true, maxVideoSeconds: number | null = null): Promise<(Post | { ok: boolean, error: string })[]> {
 		// Construct the subreddit URL from the provided parameters
 		const jsonUrl = `https://www.reddit.com/r/${subreddit}/new.json?limit=${postLimit}&raw_json=1&sr_detail=1`;
 
@@ -77,7 +77,7 @@ export class Scraper {
 				const post = postObject?.data;
 				if (!post) continue;
 	
-				const fetchedPost = await this.processSinglePost(post, returnMedia);
+				const fetchedPost = await this.processSinglePost(post, returnMedia, maxVideoSeconds);
 				postDataArray.push(fetchedPost);
 			}
 	
@@ -93,7 +93,7 @@ export class Scraper {
 	}
 
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private async processSinglePost(post: any, returnMedia: boolean): Promise<Post | { ok: boolean, error: string }> {
+	private async processSinglePost(post: any, returnMedia: boolean, maxVideoSeconds: number | null): Promise<Post | { ok: boolean, error: string }> {
 		const removePreviewLinksFromDesc = (text: string): string | null => {
 			if (!text) return null;
 			const redditPreviewLinkPattern = /https:\/\/preview\.redd\.it\/\S+/g;
@@ -166,14 +166,19 @@ export class Scraper {
 						type = 'gif';
 					}
 					else if ((media as { e: string, dashUrl: string }).e === 'RedditVideo') {
+						const dashUrl = (media as { dashUrl: string }).dashUrl;
 						const fileID = Date.now();
 						const videoPath = Path.resolve(this.downloadPath, `${fileID}_DASH_TempVideo.mp4`);
 
 						// Use ffmpeg to directly process the DASH URL and convert to MP4
 						try {
+							if (maxVideoSeconds > 0) {
+								const videoDuration = await this.getVideoDuration(dashUrl);
+								if (videoDuration > maxVideoSeconds) continue;
+							}
+
 							const command = `ffmpeg -i "${(media as { dashUrl: string }).dashUrl}" -c copy "${videoPath}"`;
 							await execPromise(command);
-							console.log('Video downloaded and converted to MP4.');
 							type = 'video';
 							buffer = await readFile(videoPath);
 						}
@@ -181,7 +186,9 @@ export class Scraper {
 							console.error('Error during download and conversion:', error);
 						}
 						finally {
-							fs.unlinkSync(videoPath);
+							if (fs.existsSync(videoPath)) {
+								fs.unlinkSync(videoPath);
+							}
 						}
 					}
 
@@ -193,7 +200,7 @@ export class Scraper {
 			}
 
 			// Handle video URLs
-			if (post?.secure_media?.reddit_video?.fallback_url && returnMedia) {
+			ExitIf: if (post?.secure_media?.reddit_video?.fallback_url && returnMedia) {
 				const url = `${post.url}/DASHPlaylist.mpd`;
 
 				const fileID = Date.now();
@@ -204,6 +211,12 @@ export class Scraper {
 		
 				if (URLs.audioUrl) {
 					const videoUrl = `${post.url}/${URLs.videoUrl}`;
+
+					if (maxVideoSeconds > 0) {
+						const videoDuration = await this.getVideoDuration(videoUrl);
+						if (videoDuration > maxVideoSeconds) break ExitIf;
+					}
+
 					const audioUrl = `${post.url}/${URLs.audioUrl}`;
 					const videoPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.videoUrl}`);
 					const audioPath = Path.resolve(this.downloadPath, `${fileID}_${URLs.audioUrl}`);
@@ -228,9 +241,9 @@ export class Scraper {
 					}
 					finally {
 						// Delete the separate audio and video files after combining or even if an error occurs
-						fs.unlinkSync(videoPath);
-						fs.unlinkSync(audioPath);
-						fs.unlinkSync(combinedOutputPath);
+						if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
+						if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
+						if (fs.existsSync(combinedOutputPath)) fs.unlinkSync(combinedOutputPath);
 						if (post.url) post.url = null;
 					}
 				}
@@ -250,7 +263,7 @@ export class Scraper {
 						console.error('Error during gif (video) download', err);
 					}
 					finally {
-						fs.unlinkSync(videoPath);
+						if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath);
 						if (post.url) post.url = null;
 					}
 				}
@@ -373,7 +386,19 @@ export class Scraper {
 			throw error;
 		}
 	}
-	
+
+	private async getVideoDuration(url: string): Promise<number> {
+		return new Promise((resolve, reject) => {
+			ffmpeg.ffprobe(url, (err, metadata) => {
+				if (err) {
+					return reject(err);
+				}
+				const duration = metadata.format.duration;
+				resolve(duration);
+			});
+		});
+	}
+
 	private async parseDASHPlaylist(xmlData: string): Promise<{ videoUrl: string, audioUrl: string }> {
 		try {
 			const result = await parseStringPromise(xmlData);
