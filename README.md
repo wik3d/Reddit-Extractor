@@ -34,7 +34,13 @@ const RedditExtractor = new Scraper('./tempFiles', proxyConfig)
 ### Get a single Post
 ```ts
 const postUrl = 'https://www.reddit.com/r/mac/comments/1fcx4p2/macos_sequoia_will_be_released_on_september_16th/';
-const post = await Scraper.fetchPost(postUrl);
+const postData = await Scraper.fetchPost(postUrl);
+
+if ('error' in post) {
+	return console.error('Error in post', post.error);
+}
+
+console.log(postData);
 ```
 <br>
 
@@ -42,5 +48,14 @@ const post = await Scraper.fetchPost(postUrl);
 ```ts
 // Will return the 5 most recent posts from r/memes
 const subreddit = 'memes';
-const post = await redditScraper.fetchPosts(subreddit, 5);
+const latestFivePosts = await redditScraper.fetchPosts(subreddit, 5);
+if (!latestFivePosts.length) return console.error('No posts found');
+
+const mostRecentPostData = latestFivePosts[0];
+
+if ('error' in mostRecentPostData) {
+	return console.error('Error in most recent post', mostRecentPostData.error)
+}
+
+console.log(mostRecentPostData);
 ```
