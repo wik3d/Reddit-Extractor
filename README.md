@@ -15,10 +15,10 @@ npm i reddit-extractor
 ```ts
 import { Scraper, Post } from 'reddit-extractor';
 
-// Proxies are not required, but recommended for large applications
+// Proxies are not required, but recommended for large applications (Only http(s) proxies are supported)
 // Reddit's JSON API rate limits if you make ~100 requests within quick succession
 const proxyConfig = {
-	protocol: '',
+	protocol: 'http',
 	host: '',
 	port: 12321,
 	auth: {
@@ -27,7 +27,7 @@ const proxyConfig = {
 	},
 };
 
-const RedditExtractor = new Scraper('./tempFiles', proxyConfig)
+const RedditExtractor = new Scraper('./tempFiles', proxyConfig);
 ```
 <br>
 
@@ -44,7 +44,7 @@ console.log(postData);
 ```
 <br>
 
-### Get multiple recent posts from a subreddit
+### Get recent posts from a subreddit
 ```ts
 // Will return the 5 most recent posts from r/memes
 const subreddit = 'memes';
@@ -54,7 +54,7 @@ if (!latestFivePosts.length) return console.error('No posts found');
 const mostRecentPostData = latestFivePosts[0];
 
 if ('error' in mostRecentPostData) {
-	return console.error('Error in most recent post', mostRecentPostData.error)
+	return console.error('Error in most recent post', mostRecentPostData.error);
 }
 
 console.log(mostRecentPostData);

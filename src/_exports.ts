@@ -1,2 +1,2 @@
 export { Scraper } from './index';
-export { Post } from './types/index';
+export { Post, proxyType, Media } from './types/index';

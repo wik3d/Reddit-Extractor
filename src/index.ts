@@ -23,16 +23,17 @@ export class Scraper {
 	private jar: CookieJar;
 
 	constructor(downloadPath: string = './', private proxy?: proxyType, private forceProxy = false) {
-		this.downloadPath = downloadPath;
-		this.ensureDirectoryExists(this.downloadPath);
-		this.jar = new CookieJar();
-
 		if (proxy) {
+			if (!['http', 'https'].includes(proxy.protocol.toLowerCase())) throw new Error('Only http and https proxies are supported');
 			const proxyAgent = new HttpsProxyAgent(
 				`${this.proxy.protocol}://${Object.keys(this.proxy.auth || {}).length > 0 ? `${this.proxy.auth?.username}:${this.proxy.auth?.password}` : ''}@${this.proxy.host}:${this.proxy.port}`,
 			);
 			this.agent = proxyAgent;
 		}
+
+		this.downloadPath = downloadPath;
+		this.ensureDirectoryExists(this.downloadPath);
+		this.jar = new CookieJar();
 	}
 
 	// Fetch a single reddit post
