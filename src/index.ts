@@ -6,13 +6,15 @@ import { parseStringPromise } from 'xml2js';
 import ffmpeg from 'fluent-ffmpeg';
 import fs from 'fs';
 import { readFile } from 'fs/promises';
-import { path } from '@ffmpeg-installer/ffmpeg';
+import { path as ffmpegPath } from '@ffmpeg-installer/ffmpeg';
+import { path as ffprobePath } from '@ffprobe-installer/ffprobe';
 import fetch from 'node-fetch';
 import { CookieJar } from 'tough-cookie';
 import fetchCookie from 'fetch-cookie';
 import { exec } from 'child_process';
 import util from 'util';
-ffmpeg.setFfmpegPath(path);
+ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfprobePath(ffprobePath);
 const execPromise = util.promisify(exec);
 
 export class Scraper {
