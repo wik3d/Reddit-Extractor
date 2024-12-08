@@ -1,6 +1,6 @@
 {
   "name": "reddit-extractor",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "Gets Reddit post data",
   "main": "production/_exports.js",
   "scripts": {
